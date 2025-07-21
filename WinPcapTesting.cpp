@@ -66,6 +66,7 @@ public:
         int i = 0;
         std::cout << std::endl;
         while (i < measurements_amount) {
+            std::cout << i + 1 << ". ";
             if (is_emited[i])
             {
                 std::cout << "Emited\n";
@@ -136,49 +137,59 @@ int strSize(const char* a) {
 
 
 
-payload* get_pcap_pkt_data(pcap_t* pcap_file, payload& data) {
+bool get_pcap_pkt_data(pcap_t& pcap_file, payload& data) {
     int data_begin_point = 0;
-    const char* link_layer_type = pcap_datalink_val_to_description(pcap_datalink(pcap_file));
-    if (memcmp(link_layer_type, "Ethernet", min(strSize(link_layer_type), strSize("Ethernet"))) == 0)
-    {
+    const char* link_layer_type = pcap_datalink_val_to_description(pcap_datalink(&pcap_file));
+
+    if (memcmp(link_layer_type, "Ethernet", min(strSize(link_layer_type), strSize("Ethernet"))) == 0) {
         data_begin_point += 14;
     }
     else {
         std::cout << "ethernet link layer type expected but " << link_layer_type << " got.\n";
-        return NULL;
+        return false;
     }
+
     pcap_pkthdr* pkt_header;
     const u_char* pkt_data;
-    pcap_next_ex(pcap_file, &pkt_header, &pkt_data);
+    pcap_next_ex(&pcap_file, &pkt_header, &pkt_data);
+
     u_int version_1st_byte = pkt_data[data_begin_point - 2];
     u_int version_2nd_byte = pkt_data[data_begin_point - 1];
-    /*printf("%.2x ", pkt_data[data_beggin_point - 2]);
-    printf("%.2x ", pkt_data[data_beggin_point - 1]);*/
+
     if ((version_1st_byte == 8) && (version_2nd_byte == 0)) {
         std::cout << "Pakage type is ipv4. Proceeding...\n";
         data_begin_point += 20;
     }
     else {
         std::cout << "Unexpected type =(\n";
-        return NULL;
+        return false;
     }
+
     u_int protocol = pkt_data[data_begin_point + 9 - 20];
     if (protocol == 17) {
         std::cout << "Protocol is UDP, great!\n";
-        data_begin_point+=8;
+        data_begin_point += 8;
     }
     else {
         std::cout << "Unexpected protocol =(\n";
-        return NULL;
+        return false;
     }
+
     int payload_size = pkt_header->len - data_begin_point;
     std::cout << "UDP payload collected. Total length is " << payload_size << " bytes.\n";
-    data.size = payload_size;  
+
+    // Очищаем предыдущие данные, если они были
+    if (data.data != nullptr) {
+        delete[] data.data;
+    }
+
+    data.size = payload_size;
     data.data = new uint8_t[data.size];
     for (int i = 0; i < data.size; i++) {
-        data.data[i] = pkt_data[data_begin_point + i]; 
+        data.data[i] = pkt_data[data_begin_point + i];
     }
-    return &data;
+
+    return true;
 }
 
 int main()
@@ -203,13 +214,13 @@ int main()
     else {
         std::cout << errbuff << std::endl;
     }
-    pcap_pkthdr* pkt_header;
-    const u_char* pkt_data;
+    /*pcap_pkthdr* pkt_header;
+    const u_char* pkt_data;*/
     payload data;
     data.size = 0;
     data.data = NULL;
 
-    get_pcap_pkt_data(pcap_file, data);
+    get_pcap_pkt_data(*pcap_file, data);
     for (int i = 1; i < data.size +1; i++) {
         printf("%.2x ", data.data[i - 1]);  
         if ((i % LINE_LEN) == LINE_LEN / 2) std::cout << "  ";
