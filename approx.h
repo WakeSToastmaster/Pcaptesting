@@ -4,11 +4,10 @@
 
 namespace approx {
 
-    // Структура для хранения коэффициентов параболы
-    struct ParabolaCoeffs {
-        double a0; // Константа
-        double a1; // Коэффициент при x
-        double a2; // Коэффициент при x^2
+    struct GaussianCoeffs {
+        double A;    // Амплитуда
+        double mu;   // Математическое ожидание (центр)
+        double sigma; // Стандартное отклонение (ширина)
     };
 
     // Функция для построения матрицы A
