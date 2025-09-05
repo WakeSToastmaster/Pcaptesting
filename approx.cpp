@@ -108,4 +108,19 @@ namespace approx {
         std::cout << "o (width):     " << coeffs[2] << "\n";
     }
 
+    std::vector<double> discretize_gaussian(const Eigen::VectorXd& coeffs, const std::vector<double>& x_points) {
+        std::vector<double> discretized_values;
+        discretized_values.reserve(x_points.size());
+
+        double A = coeffs[0];
+        double mu = coeffs[1];
+        double sigma = coeffs[2];
+
+        for (double x : x_points) {
+            double value = A * std::exp(-std::pow(x - mu, 2) / (2 * std::pow(sigma, 2)));
+            discretized_values.push_back(value);
+        }
+
+        return discretized_values;
+    }
 }

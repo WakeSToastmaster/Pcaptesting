@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <span>
 #include "approx.h"
+#include "kalman_filter.h"
 
 using namespace agm::net;
 
@@ -38,8 +39,8 @@ struct extrenum {
     uint8_t values[5];
 };
 
-
-bool process_measurements(const A3Wform& measurement, std::vector<extrenum>& extrenums){
+//функция для обработки данных и занесения различных экстренумов в вектор extrenums для последующей их обработки и создания типовой функции, для смены отправленными и принятыми сигналами менял условие в первой строке функции.
+bool process_measurements(const A3Wform& measurement, std::vector<extrenum>& extrenums){ 
     if (measurement.is_emited != '\0') return false;
     for (size_t i = 2; i < 18; i++)
     {
@@ -56,7 +57,7 @@ bool process_measurements(const A3Wform& measurement, std::vector<extrenum>& ext
     return false;
 }
 
-
+//функция для сохранения данных в csv файл для таблиц.
 void save_to_csv(std::span<const A3Wform>& data) {
     std::string path;
     std::cout << "Enter path of folder to save a file";
@@ -93,6 +94,8 @@ void save_to_csv(std::span<const A3Wform>& data) {
     csv_data_file.close();
     std::cout << "saved!\n";
 }
+
+//перегрузка void save_to_csv(std::span<const A3Wform>&) для сохранения только экстренумов.
 void save_to_csv(std::vector<extrenum> data) {
     std::string path;
     std::cout << "Enter path of folder to save a file";
@@ -194,7 +197,7 @@ int main(int argc, char* argv[])
         std::cout << fmt::format("pcap_open_offline error \n({})", errbuff);
         return 0;
     }
-    std::cin >> errbuff;
+    //std::cin >> errbuff; использовал эту строчку для остановки приложения для дебага.
     std::span<const A3Wform> data;
     std::vector<extrenum> extrenums(0);
     for (size_t i = 1; i < 2000; i++)
@@ -206,16 +209,59 @@ int main(int argc, char* argv[])
         }
     }
     std::cout << extrenums.size() << std::endl;
-    save_to_csv(extrenums);
+
+    // Создаем фильтр Калмана для каждой из 5 точек измерения
+    const int measurement_points = 5;
+    std::vector<KalmanFilter> intensity_filters;
+
+    // Инициализируем фильтры для каждой точки измерения
+    for (int i = 0; i < measurement_points; ++i) {
+        KalmanFilter kf(1, 1);
+        Eigen::VectorXd initial_state(1);
+        initial_state << 150.0; // Начальное значение показателя датчика
+        Eigen::MatrixXd initial_cov = Eigen::MatrixXd::Identity(1, 1) * 0.1;
+        kf.init(initial_state, initial_cov);
+        intensity_filters.push_back(kf);
+    }
+
+    // Матрицы для фильтрации
+    Eigen::MatrixXd F = Eigen::MatrixXd::Identity(1, 1);  // State transition
+    Eigen::MatrixXd H = Eigen::MatrixXd::Identity(1, 1);  // Measurement function
+    Eigen::MatrixXd Q = Eigen::MatrixXd::Identity(1, 1) * 0.01;  // Process noise
+    Eigen::MatrixXd R = Eigen::MatrixXd::Identity(1, 1) * 0.1;   // Measurement noise
+
+    // Фильтруем все экстремумы
     std::vector<std::vector<double>> y_data;
+
+    for (const auto& ex : extrenums) {
+        std::vector<double> filtered_measurements;
+
+        for (int i = 0; i < measurement_points; ++i) {
+            Eigen::VectorXd measurement(1);
+            measurement << static_cast<double>(ex.values[i]);
+
+            intensity_filters[i].predict(F, Q);
+            intensity_filters[i].update(measurement, H, R);
+
+            double filtered_value = intensity_filters[i].getState()(0);
+            filtered_measurements.push_back(filtered_value);
+        }
+
+        y_data.push_back(filtered_measurements);
+    }
+
+    /*save_to_csv(extrenums);*/
+    //без фильтра Калмана
+    /*std::vector<std::vector<double>> y_data;
     for (const auto& ex : extrenums) {
         std::vector<double> y_values;
         for (int i = 0; i < 5; ++i) {
             y_values.push_back(static_cast<double>(ex.values[i]));
         }
         y_data.push_back(y_values);
-    }
+    }*/
 
+    //подсчёт параметров аппроксимирующей функции. Увы, её реализацию в фильтрации я так и не использовал.
     Eigen::VectorXd total_coeffs = Eigen::VectorXd::Zero(3);
     int count = 0;
 
@@ -226,7 +272,10 @@ int main(int argc, char* argv[])
     }
 
     Eigen::VectorXd avg_coeffs = total_coeffs / count;
+    const std::vector<double> x_points = { 1.0, 2.0, 3.0, 4.0, 5.0 };
+    std::vector<double> discretized = approx::discretize_gaussian(avg_coeffs, x_points);
 
+    //вывод результатов
     std::cout << "\n=== Final averaged coefficients ===\n";
     approx::print_coefficients(avg_coeffs);
 

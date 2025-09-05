@@ -28,4 +28,8 @@ namespace approx {
     // Вывод коэффициентов в консоль
     void print_coefficients(const Eigen::VectorXd& coeffs);
 
+    //дискретизация гауссовской функции
+    std::vector<double> discretize_gaussian(const Eigen::VectorXd& coeffs,
+        const std::vector<double>& x_points);
+
 } // namespace approx
